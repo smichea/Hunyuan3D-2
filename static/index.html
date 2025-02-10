@@ -1,0 +1,110 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Hunyuan3D - Generate 3D</title>
+    <!-- Include model-viewer via CDN -->
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+  </head>
+  <body>
+    <h1>Hunyuan3D Demo</h1>
+
+    <div>
+      <label>Select an image:</label>
+      <input id="fileInput" type="file" accept="image/*" />
+    </div>
+
+    <div>
+      <img id="previewImg" src="" alt="Preview" style="max-width: 300px; margin-top: 10px;" />
+    </div>
+
+    <div style="margin-top: 10px;">
+      <input type="checkbox" id="fastCheck" /> Fast
+      <input type="checkbox" id="textureCheck" /> Texture
+    </div>
+
+    <div style="margin-top: 10px;">
+      <button id="generateBtn" onclick="generateModel()">Generate</button>
+    </div>
+
+    <p id="statusMsg"></p>
+    <p id="timeMsg"></p>
+
+    <model-viewer
+        id="modelViewer"
+        style="width: 600px; height: 600px;"
+        src=""
+        auto-rotate
+        camera-controls>
+    </model-viewer>
+
+    <script>
+      let base64Image = null;
+
+      // When file is chosen, read it as base64 and show preview
+      document.getElementById("fileInput").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const dataURL = event.target.result;
+          base64Image = dataURL.split(",")[1]; // remove the "data:...base64," prefix
+          document.getElementById("previewImg").src = dataURL;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      async function generateModel() {
+        if (!base64Image) {
+          alert("Please select an image first!");
+          return;
+        }
+
+        const fast = document.getElementById("fastCheck").checked;
+        const texture = document.getElementById("textureCheck").checked;
+
+        document.getElementById("statusMsg").textContent = "Generating 3D model...";
+        document.getElementById("timeMsg").textContent = "";
+
+        const t0 = performance.now();
+        try {
+          // Assumes your API is at the same origin. 
+          // If it's running on a different port or domain, 
+          // use the full URL: e.g. "http://localhost:8081/generate"
+          const response = await fetch("/generate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              image: base64Image,
+              fast: fast,
+              texture: texture
+            })
+          });
+
+          if (!response.ok) {
+            document.getElementById("statusMsg").textContent = "Error generating model.";
+            console.error("Generate request failed:", response.status, await response.text());
+            return;
+          }
+
+          // The server returns a .glb file as a binary blob
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+
+          const t1 = performance.now();
+          const timeSpentSec = ((t1 - t0) / 1000).toFixed(2);
+
+          document.getElementById("timeMsg").textContent = "Time spent: " + timeSpentSec + "s";
+          document.getElementById("statusMsg").textContent = "Model generated successfully!";
+          document.getElementById("modelViewer").src = url;
+
+        } catch (err) {
+          document.getElementById("statusMsg").textContent = "An error occurred!";
+          console.error(err);
+        }
+      }
+    </script>
+  </body>
+</html>
