@@ -207,6 +207,26 @@ curl -X POST "http://localhost:8080/generate" \
      -o test2.glb
 ```
 
+if the image is too big to be sent as text create first a file with the base64 text of the image
+
+```bash
+base64 assets/demo.png > img_b64.txt
+jq -Rs '{image: .}' img_b64.txt | curl -X POST "http://localhost:8080/generate" \
+     -H "Content-Type: application/json" \
+     -d @- \
+     -o test2.glb
+```
+
+to use the fast model add the "fast" param to the query
+```bash
+jq -Rs '{image: ., fast: true}' img_b64.txt | curl -X POST "http://localhost:8080/generate" \
+     -H "Content-Type: application/json" \
+     -d @- \
+     -o test2_fast.glb
+
+```
+
+
 ### Blender Addon
 
 With an API server launched, you could also directly use Hunyuan3D 2.0 in your blender with
