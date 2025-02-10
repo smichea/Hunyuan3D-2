@@ -1,9 +1,7 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
   <head>
     <title>Hunyuan3D - Generate 3D</title>
-    <!-- Include model-viewer via CDN -->
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   </head>
   <body>
@@ -38,8 +36,13 @@
         camera-controls>
     </model-viewer>
 
+    <div style="margin-top: 10px;">
+      <button id="downloadBtn" style="display: none;" onclick="downloadModel()">Download Model</button>
+    </div>
+
     <script>
       let base64Image = null;
+      let generatedModelUrl = null;
 
       // When file is chosen, read it as base64 and show preview
       document.getElementById("fileInput").addEventListener("change", (e) => {
@@ -65,12 +68,10 @@
 
         document.getElementById("statusMsg").textContent = "Generating 3D model...";
         document.getElementById("timeMsg").textContent = "";
+        document.getElementById("downloadBtn").style.display = "none"; // Hide download button initially
 
         const t0 = performance.now();
         try {
-          // Assumes your API is at the same origin. 
-          // If it's running on a different port or domain, 
-          // use the full URL: e.g. "http://localhost:8081/generate"
           const response = await fetch("/generate", {
             method: "POST",
             headers: {
@@ -89,21 +90,36 @@
             return;
           }
 
-          // The server returns a .glb file as a binary blob
+          // Convert response into a downloadable file URL
           const blob = await response.blob();
-          const url = URL.createObjectURL(blob);
+          generatedModelUrl = URL.createObjectURL(blob);
 
           const t1 = performance.now();
           const timeSpentSec = ((t1 - t0) / 1000).toFixed(2);
 
           document.getElementById("timeMsg").textContent = "Time spent: " + timeSpentSec + "s";
           document.getElementById("statusMsg").textContent = "Model generated successfully!";
-          document.getElementById("modelViewer").src = url;
+          document.getElementById("modelViewer").src = generatedModelUrl;
+          document.getElementById("downloadBtn").style.display = "block"; // Show download button
 
         } catch (err) {
           document.getElementById("statusMsg").textContent = "An error occurred!";
           console.error(err);
         }
+      }
+
+      function downloadModel() {
+        if (!generatedModelUrl) {
+          alert("No model generated yet!");
+          return;
+        }
+
+        const a = document.createElement("a");
+        a.href = generatedModelUrl;
+        a.download = "generated_model.glb";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       }
     </script>
   </body>
