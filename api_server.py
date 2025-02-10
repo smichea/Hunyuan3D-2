@@ -9,6 +9,7 @@ import tempfile
 import threading
 import traceback
 import uuid
+import gc
 from io import BytesIO
 
 import torch
@@ -62,47 +63,56 @@ class ModelWorker:
 
     @torch.inference_mode()
     def generate(self, uid, params):
-        fast_mode = params.get("fast", False)
+        try:
+            fast_mode = params.get("fast", False)
+            
+            if 'image' in params:
+                image = load_image_from_base64(params["image"])
+            elif 'text' in params:
+                text = params["text"]
+                image = self.pipeline_t2i(text)
+            else:
+                raise ValueError("No input image or text provided")
+
+            image = self.rembg(image)
+
+            if fast_mode:
+                pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+                    self.model_path,
+                    subfolder='hunyuan3d-dit-v2-0-fast',
+                    variant='fp16',
+                    device=self.device
+                )
+            else:
+                pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(self.model_path, device=self.device)
+
+            params['generator'] = torch.Generator(self.device).manual_seed(params.get("seed", 1234))
+            params['num_inference_steps'] = params.get("num_inference_steps", 20)
+            params['guidance_scale'] = params.get('guidance_scale', 5.0)
+            params['mc_algo'] = 'mc'
+            
+            mesh = pipeline(**params)[0]
+            
+            if params.get('texture', False):
+                mesh = FloaterRemover()(mesh)
+                mesh = DegenerateFaceRemover()(mesh)
+                mesh = FaceReducer()(mesh, max_facenum=params.get('face_count', 40000))
+                mesh = self.pipeline_tex(mesh, image)
+
+            save_path = os.path.join(SAVE_DIR, f'{str(uid)}.glb')
+            mesh.export(save_path)
+
+            return save_path, uid
         
-        if 'image' in params:
-            image = load_image_from_base64(params["image"])
-        elif 'text' in params:
-            text = params["text"]
-            image = self.pipeline_t2i(text)
-        else:
-            raise ValueError("No input image or text provided")
-
-        image = self.rembg(image)
-
-        if fast_mode:
-            pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                self.model_path,
-                subfolder='hunyuan3d-dit-v2-0-fast',
-                variant='fp16',
-                device=self.device
-            )
-        else:
-            pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(self.model_path, device=self.device)
-
-        params['generator'] = torch.Generator(self.device).manual_seed(params.get("seed", 1234))
-        params['octree_resolution'] = params.get("octree_resolution", 256)
-        params['num_inference_steps'] = params.get("num_inference_steps", 30)
-        params['guidance_scale'] = params.get('guidance_scale', 7.5)
-        params['mc_algo'] = 'mc'
+        except Exception as e:
+            logger.error(f"Error during generation: {e}")
+            traceback.print_exc()
+            raise e
         
-        mesh = pipeline(**params)[0]
-        
-        if params.get('texture', False):
-            mesh = FloaterRemover()(mesh)
-            mesh = DegenerateFaceRemover()(mesh)
-            mesh = FaceReducer()(mesh, max_facenum=params.get('face_count', 40000))
-            mesh = self.pipeline_tex(mesh, image)
-
-        save_path = os.path.join(SAVE_DIR, f'{str(uid)}.glb')
-        mesh.export(save_path)
-
-        torch.cuda.empty_cache()
-        return save_path, uid
+        finally:
+            del pipeline, mesh, image
+            torch.cuda.empty_cache()
+            gc.collect()
 
 app = FastAPI()
 
